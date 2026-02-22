@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Mic, MicOff, Square, Play, Pause, RotateCcw, Download, Music } from 'lucide-react'
+import * as Tone from 'tone'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -9,7 +10,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { SheetMusicDisplay } from '@/components/SheetMusicDisplay'
 import { AudioVisualizer } from '@/components/AudioVisualizer'
 import { useAudioRecorder } from '@/hooks/useAudioRecorder'
-import { exportToMidi, exportToMusicXml } from '@/lib/exportUtils'
+import { exportToMidi, exportToMusicXml, exportToPdf } from '@/lib/exportUtils'
+import { createSheetSynth, getTotalPlaybackSeconds, SHEET_INSTRUMENTS, type SheetInstrument, noteDurationToSeconds } from '@/lib/sheetPlayer'
 
 const BPM_DEFAULT = 120
 
@@ -29,12 +31,63 @@ export default function App() {
   } = useAudioRecorder()
 
   const [bpm, setBpm] = useState(BPM_DEFAULT)
+  const [instrument, setInstrument] = useState<SheetInstrument>('piano')
+  const [isPlayingSheet, setIsPlayingSheet] = useState(false)
+  const sheetSynthRef = useRef<Tone.PolySynth | null>(null)
+  const stopTimerRef = useRef<number | null>(null)
 
   const isIdle = recordingState === 'idle'
   const isRecording = recordingState === 'recording'
   const isPaused = recordingState === 'paused'
   const isStopped = recordingState === 'stopped'
   const hasNotes = detectedNotes.length > 0
+
+  const stopSheetPlayback = () => {
+    if (stopTimerRef.current !== null) {
+      window.clearTimeout(stopTimerRef.current)
+      stopTimerRef.current = null
+    }
+    if (sheetSynthRef.current) {
+      sheetSynthRef.current.dispose()
+      sheetSynthRef.current = null
+    }
+    setIsPlayingSheet(false)
+  }
+
+  const playSheetNotes = async () => {
+    if (!hasNotes || isPlayingSheet) return
+
+    await Tone.start()
+    stopSheetPlayback()
+
+    const synth = createSheetSynth(instrument)
+    sheetSynthRef.current = synth
+
+    let startAt = Tone.now() + 0.05
+    for (const note of detectedNotes) {
+      const durationSec = noteDurationToSeconds(note.duration, bpm)
+      synth.triggerAttackRelease(`${note.note}${note.octave}`, durationSec, startAt, 0.8)
+      startAt += durationSec
+    }
+
+    const totalMs = Math.ceil(getTotalPlaybackSeconds(detectedNotes, bpm) * 1000)
+    setIsPlayingSheet(true)
+    stopTimerRef.current = window.setTimeout(() => {
+      stopSheetPlayback()
+    }, totalMs + 120)
+  }
+
+  useEffect(() => {
+    if (isPlayingSheet) {
+      stopSheetPlayback()
+    }
+  }, [instrument])
+
+  useEffect(() => {
+    return () => {
+      stopSheetPlayback()
+    }
+  }, [])
 
   const stateColor: Record<string, string> = {
     idle: 'secondary',
@@ -193,15 +246,51 @@ export default function App() {
                   <CardTitle className="text-white text-base">Live Transcription</CardTitle>
                   <CardDescription className="text-purple-300/70">
                     {hasNotes
-                      ? `${detectedNotes.length} note${detectedNotes.length !== 1 ? 's' : ''} detected — showing the last 8`
+                      ? `${detectedNotes.length} note${detectedNotes.length !== 1 ? 's' : ''} detected — showing live multi-measure score`
                       : 'Start recording to see notes appear here in real time'}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <SheetMusicDisplay
-                    notes={detectedNotes}
-                    currentNote={isRecording ? currentNote : null}
-                  />
+                  <div className="mb-4 flex flex-wrap items-center gap-3">
+                    <label className="text-sm text-purple-200">
+                      Instrument
+                    </label>
+                    <select
+                      value={instrument}
+                      onChange={e => setInstrument(e.target.value as SheetInstrument)}
+                      disabled={isPlayingSheet}
+                      className="rounded-md border border-white/20 bg-slate-900 px-3 py-2 text-sm text-white"
+                    >
+                      {SHEET_INSTRUMENTS.map(item => (
+                        <option key={item.id} value={item.id}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </select>
+                    <Button
+                      onClick={playSheetNotes}
+                      disabled={!hasNotes || isPlayingSheet}
+                      className="gap-2 bg-purple-600 hover:bg-purple-700"
+                    >
+                      <Play className="h-4 w-4" />
+                      Play Sheet
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={stopSheetPlayback}
+                      disabled={!isPlayingSheet}
+                      className="gap-2 border-white/20 text-white hover:bg-white/10"
+                    >
+                      <Square className="h-4 w-4" />
+                      Stop Playback
+                    </Button>
+                  </div>
+                  <div id="sheet-music-export-target">
+                    <SheetMusicDisplay
+                      notes={detectedNotes}
+                      currentNote={isRecording ? currentNote : null}
+                    />
+                  </div>
                 </CardContent>
               </Card>
             </TabsContent>
@@ -276,6 +365,20 @@ export default function App() {
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>Download as .xml — open in MuseScore, Finale, Sibelius</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      onClick={() => exportToPdf(detectedNotes, bpm)}
+                      className="gap-2 border-white/20 text-white hover:bg-white/10"
+                    >
+                      <Download className="h-4 w-4" />
+                      Export PDF
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Download the current sheet as .pdf</TooltipContent>
                 </Tooltip>
               </CardContent>
             </Card>

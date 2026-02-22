@@ -1,4 +1,6 @@
 import { Midi } from '@tonejs/midi'
+import { jsPDF } from 'jspdf'
+import 'svg2pdf.js'
 import type { DetectedNote } from '@/hooks/useAudioRecorder'
 
 export function exportToMidi(notes: DetectedNote[], bpm = 120): void {
@@ -109,4 +111,51 @@ ${noteElements.join('\n')}
   a.download = 'realtime-music-sheet.xml'
   a.click()
   URL.revokeObjectURL(url)
+}
+
+export async function exportToPdf(notes: DetectedNote[], bpm = 120): Promise<void> {
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'pt',
+    format: 'a4',
+  })
+
+  doc.setFontSize(14)
+  doc.text('Realtime Music Sheet', 40, 38)
+  doc.setFontSize(10)
+  doc.text(`Tempo: ${bpm} BPM`, 40, 56)
+
+  const svg = document.querySelector('#sheet-music-export-target svg')
+
+  if (svg instanceof SVGElement) {
+    const x = 35
+    const y = 72
+    const maxWidth = 770
+    const maxHeight = 470
+    const vb = svg.viewBox.baseVal
+    const sourceWidth = vb?.width || svg.clientWidth || 700
+    const sourceHeight = vb?.height || svg.clientHeight || 160
+    const ratio = Math.min(maxWidth / sourceWidth, maxHeight / sourceHeight)
+    const width = sourceWidth * ratio
+    const height = sourceHeight * ratio
+
+    await doc.svg(svg, {
+      x,
+      y,
+      width,
+      height,
+    })
+  } else {
+    doc.setFontSize(11)
+    doc.text('No rendered sheet found. The detected notes are listed below:', 40, 90)
+
+    let y = 116
+    notes.slice(0, 45).forEach((note, index) => {
+      const duration = Math.round(note.duration ?? 500)
+      doc.text(`${index + 1}. ${note.note}${note.octave}  •  ${duration} ms`, 48, y)
+      y += 14
+    })
+  }
+
+  doc.save('realtime-music-sheet.pdf')
 }

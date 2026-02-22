@@ -21,6 +21,7 @@
     "@tonejs/midi": "^2.0.28",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "jspdf": "^2.5.2",
     "lucide-react": "^0.575.0",
     "pitchy": "^4.1.0",
     "react": "^19.2.0",
@@ -28,7 +29,8 @@
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.2.0",
     "tone": "^15.1.22",
-    "vexflow": "^5.0.0"
+    "vexflow": "^5.0.0",
+    "svg2pdf.js": "^2.5.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
