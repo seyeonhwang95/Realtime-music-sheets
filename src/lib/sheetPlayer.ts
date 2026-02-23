@@ -14,6 +14,7 @@ export const SHEET_INSTRUMENTS: Array<{ id: SheetInstrument; label: string }> = 
 ]
 
 const FALLBACK_NOTE_DURATION_MS = 600
+const DEFAULT_PLAYBACK_SPEED = 1
 
 export function noteDurationToSeconds(durationMs: number | undefined, bpm: number): number {
   if (durationMs && durationMs > 0) {
@@ -21,6 +22,11 @@ export function noteDurationToSeconds(durationMs: number | undefined, bpm: numbe
   }
   const quarterNoteSeconds = 60 / bpm
   return Math.max(0.08, quarterNoteSeconds || FALLBACK_NOTE_DURATION_MS / 1000)
+}
+
+export function applyPlaybackSpeed(durationSeconds: number, playbackSpeed = DEFAULT_PLAYBACK_SPEED): number {
+  const safeSpeed = playbackSpeed > 0 ? playbackSpeed : DEFAULT_PLAYBACK_SPEED
+  return Math.max(0.05, durationSeconds / safeSpeed)
 }
 
 export function createSheetSynth(instrument: SheetInstrument): Tone.PolySynth {
@@ -69,4 +75,11 @@ export function createSheetSynth(instrument: SheetInstrument): Tone.PolySynth {
 
 export function getTotalPlaybackSeconds(notes: DetectedNote[], bpm: number): number {
   return notes.reduce((sum, note) => sum + noteDurationToSeconds(note.duration, bpm), 0)
+}
+
+export function getTotalPlaybackSecondsWithSpeed(notes: DetectedNote[], bpm: number, playbackSpeed = DEFAULT_PLAYBACK_SPEED): number {
+  return notes.reduce((sum, note) => {
+    const baseDuration = noteDurationToSeconds(note.duration, bpm)
+    return sum + applyPlaybackSpeed(baseDuration, playbackSpeed)
+  }, 0)
 }

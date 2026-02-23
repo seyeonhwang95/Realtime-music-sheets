@@ -2,6 +2,8 @@ import { Midi } from '@tonejs/midi'
 import { jsPDF } from 'jspdf'
 import 'svg2pdf.js'
 import type { DetectedNote } from '@/hooks/useAudioRecorder'
+import type { MusicalContext } from '@/lib/musicAnalysis'
+import { keySignatureToFifths } from '@/lib/musicAnalysis'
 
 export function exportToMidi(notes: DetectedNote[], bpm = 120): void {
   const midi = new Midi()
@@ -35,7 +37,7 @@ export function exportToMidi(notes: DetectedNote[], bpm = 120): void {
   URL.revokeObjectURL(url)
 }
 
-export function exportToMusicXml(notes: DetectedNote[], bpm = 120): void {
+export function exportToMusicXml(notes: DetectedNote[], bpm = 120, musicalContext?: MusicalContext): void {
   const NOTE_NAMES_XML: Record<string, { step: string; alter?: number }> = {
     C: { step: 'C' },
     'C#': { step: 'C', alter: 1 },
@@ -53,6 +55,12 @@ export function exportToMusicXml(notes: DetectedNote[], bpm = 120): void {
 
   const divisions = 4
   const secondsPerBeat = 60 / bpm
+  const timeSignature = musicalContext?.timeSignature ?? '4/4'
+  const [beatsPart, beatTypePart] = timeSignature.split('/')
+  const beats = Number(beatsPart) || 4
+  const beatType = Number(beatTypePart) || 4
+  const keySignature = musicalContext?.keySignature ?? 'C'
+  const fifths = keySignatureToFifths(keySignature)
 
   const noteElements = notes.map(n => {
     const durationSeconds = (n.duration ?? 500) / 1000
@@ -86,8 +94,8 @@ export function exportToMusicXml(notes: DetectedNote[], bpm = 120): void {
     <measure number="1">
       <attributes>
         <divisions>${divisions}</divisions>
-        <key><fifths>0</fifths></key>
-        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <key><fifths>${fifths}</fifths></key>
+        <time><beats>${beats}</beats><beat-type>${beatType}</beat-type></time>
         <clef><sign>G</sign><line>2</line></clef>
       </attributes>
       <direction placement="above">
@@ -125,9 +133,9 @@ export async function exportToPdf(notes: DetectedNote[], bpm = 120): Promise<voi
   doc.setFontSize(10)
   doc.text(`Tempo: ${bpm} BPM`, 40, 56)
 
-  const svg = document.querySelector('#sheet-music-export-target svg')
+  const svg = document.querySelector<SVGSVGElement>('#sheet-music-export-target svg')
 
-  if (svg instanceof SVGElement) {
+  if (svg instanceof SVGSVGElement) {
     const x = 35
     const y = 72
     const maxWidth = 770

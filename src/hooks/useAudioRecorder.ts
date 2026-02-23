@@ -39,6 +39,16 @@ export function useAudioRecorder() {
   const minNoteDurationMs = 80
   const clarityThreshold = 0.92
 
+  const commitActiveNote = useCallback((now: number) => {
+    if (lastNoteRef.current && noteStartTimeRef.current) {
+      const duration = now - noteStartTimeRef.current
+      if (duration >= minNoteDurationMs) {
+        const note = lastNoteRef.current
+        setDetectedNotes(prev => [...prev, { ...note, duration }])
+      }
+    }
+  }, [])
+
   const stopAnalysis = useCallback(() => {
     if (animationFrameRef.current !== null) {
       cancelAnimationFrame(animationFrameRef.current)
@@ -73,20 +83,14 @@ export function useAudioRecorder() {
 
         const now = performance.now()
 
-        if (
-          lastNoteRef.current?.note !== noteWithOctave ||
-          !noteStartTimeRef.current
-        ) {
+        const isNewNote =
+          !noteStartTimeRef.current ||
+          lastNoteRef.current?.note !== note ||
+          lastNoteRef.current?.octave !== octave
+
+        if (isNewNote) {
           // New note detected
-          if (lastNoteRef.current && noteStartTimeRef.current) {
-            const duration = now - noteStartTimeRef.current
-            if (duration >= minNoteDurationMs) {
-              setDetectedNotes(prev => [
-                ...prev,
-                { ...lastNoteRef.current!, duration },
-              ])
-            }
-          }
+          commitActiveNote(now)
           lastNoteRef.current = {
             frequency,
             note,
@@ -96,18 +100,18 @@ export function useAudioRecorder() {
             clarity,
           }
           noteStartTimeRef.current = now
+        } else if (lastNoteRef.current) {
+          lastNoteRef.current = {
+            ...lastNoteRef.current,
+            frequency,
+            clarity,
+          }
         }
       } else {
         // Silence / unclear
-        if (lastNoteRef.current && noteStartTimeRef.current) {
-          const duration = performance.now() - noteStartTimeRef.current
-          if (duration >= minNoteDurationMs) {
-            const note = lastNoteRef.current
-            setDetectedNotes(prev => [...prev, { ...note, duration }])
-          }
-          lastNoteRef.current = null
-          noteStartTimeRef.current = null
-        }
+        commitActiveNote(performance.now())
+        lastNoteRef.current = null
+        noteStartTimeRef.current = null
         setCurrentFrequency(null)
         setCurrentNote(null)
       }
@@ -116,7 +120,7 @@ export function useAudioRecorder() {
     }
 
     animationFrameRef.current = requestAnimationFrame(analyse)
-  }, [])
+  }, [commitActiveNote])
 
   const startRecording = useCallback(async () => {
     setError(null)
@@ -142,13 +146,16 @@ export function useAudioRecorder() {
   }, [startAnalysis])
 
   const pauseRecording = useCallback(() => {
+    commitActiveNote(performance.now())
     stopAnalysis()
     audioContextRef.current?.suspend()
+    lastNoteRef.current = null
+    noteStartTimeRef.current = null
     setRecordingState('paused')
     setCurrentFrequency(null)
     setCurrentNote(null)
     setVolume(0)
-  }, [stopAnalysis])
+  }, [commitActiveNote, stopAnalysis])
 
   const resumeRecording = useCallback(() => {
     if (analyserRef.current && audioContextRef.current) {
@@ -159,6 +166,7 @@ export function useAudioRecorder() {
   }, [startAnalysis])
 
   const stopRecording = useCallback(() => {
+    commitActiveNote(performance.now())
     stopAnalysis()
     streamRef.current?.getTracks().forEach(t => t.stop())
     audioContextRef.current?.close()
@@ -171,9 +179,10 @@ export function useAudioRecorder() {
     setCurrentFrequency(null)
     setCurrentNote(null)
     setVolume(0)
-  }, [stopAnalysis])
+  }, [commitActiveNote, stopAnalysis])
 
   const resetRecording = useCallback(() => {
+    commitActiveNote(performance.now())
     stopAnalysis()
     streamRef.current?.getTracks().forEach(t => t.stop())
     audioContextRef.current?.close()
@@ -188,7 +197,7 @@ export function useAudioRecorder() {
     setCurrentNote(null)
     setVolume(0)
     setError(null)
-  }, [stopAnalysis])
+  }, [commitActiveNote, stopAnalysis])
 
   return {
     recordingState,
